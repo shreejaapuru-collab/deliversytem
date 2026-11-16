@@ -277,7 +277,7 @@ def optimize(db: Session, route_date, seconds: int) -> dict:
                 for vehicle_index, vehicle in enumerate(vehicles)
                 if vehicle.vehicle_type in allowed_types
             ]
-            routing.SetAllowedVehiclesForIndex(allowed_indices, index)
+            routing.VehicleVar(index).SetValues(allowed_indices)
 
     def weight_demand(index):
         node = manager.IndexToNode(index)

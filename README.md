@@ -65,7 +65,7 @@ this service to the public internet.
 Generate a small local dataset by posting JSON to `/api/v1/data/generate`:
 
 ```json
-{"sites":30,"deliveries":100,"vehicles":10,"seed":20261022}
+{"sites":30,"deliveries":100,"vehicles":10,"seed":20261022,"reference_date":"2026-10-22"}
 ```
 
 SQLite is used by default. Set `DATABASE_URL` to point at PostgreSQL when a
@@ -82,20 +82,34 @@ python -m pytest
 ## Current scope
 
 The route solver uses OR-Tools with weight capacity, volume capacity, customer
-time windows, service time, and driver shift limits. The simulator produces
-deterministic outcomes and appends each run to `outcome_events`. The data
-generator adds a small labelled capacity exception and synthetic 30-day
-depot-to-site travel-time samples. The data tools are available to an
-operations manager:
+time windows, service time, driver shift limits, and delivery vehicle-type
+restrictions. It uses exact site-to-site traffic samples for the generation
+date, depot samples for a 30-day horizon, and derives documented estimates
+when an exact edge/date sample is unavailable. The simulator records actual
+arrival/departure timestamps and appends every run to `outcome_events`.
+
+The seeded generator adds effective-dated vehicle capacities and time windows,
+variable service windows, VAN/TRUCK restrictions, one labeled over-capacity
+delivery, one labeled out-of-region site, and five isolated negative scenario
+fixtures. The fixtures cover an over-capacity route, duplicate and omitted
+stops, an arrival before the previous departure, and a driver shift overrun.
+Fixtures and ground-truth labels are not optimizer inputs. The data tools are
+available to an operations manager:
 
 - `GET /api/v1/data/validate` returns a validation summary.
-- `GET /api/v1/data/export.json` exports sites, orders, deliveries, and a
-  separate `ground_truth` section.
+- `GET /api/v1/data/export.json` exports all operational tables, a separate
+  `ground_truth` section, and the dataset manifest.
+- `GET /api/v1/data/export.zip` exports per-entity CSV files, separate ground
+  truth CSV files, and `manifest.json`.
+- `GET /api/v1/data/export.sql` exports SQLite schema and seed statements,
+  excluding authentication users and sessions.
 - `GET /api/v1/data/export.csv` exports deliveries.
 
-The random seed defaults to `20261022`. Data generation replaces the current
-synthetic operational dataset; simulation history is retained as snapshots.
-The travel-time samples are generated for reporting and are not yet used by
-the route optimizer. Deliberate anomaly coverage and SQL seed export are still
-limited and need further work for full acceptance of the supplied brief. No
-TypeScript files or TypeScript dependencies are used.
+The default random seed is `20261022`. To reproduce a dataset, keep both its
+seed and `reference_date` unchanged; the generated checksum is included in the
+manifest. All records are synthetic; no external dataset is used. Data
+generation replaces the current synthetic operational dataset, while
+simulation history is retained as snapshots. See
+[docs/data-dictionary.md](docs/data-dictionary.md) for field definitions,
+relationships, units, validation rules, and lifecycle details. No TypeScript
+files or TypeScript dependencies are used.
