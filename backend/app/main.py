@@ -24,28 +24,66 @@ from app.schemas import AuthCredentials, AuthResponse, AuthUserResponse, Generat
 from app.services.generator import generate_data
 from app.services.optimizer import optimize
 from app.services.simulation import simulate
-from app.services.data_quality import export_delivery_csv, export_json, validate_data
+from app.services.data_quality import (
+    export_csv_zip,
+    export_delivery_csv,
+    export_json,
+    export_sql,
+    validate_data,
+)
 
 Base.metadata.create_all(bind=engine)
 
-# Add the human-readable stop ID to databases created by earlier versions.
-if "route_stops" in inspect(engine).get_table_names():
-    route_stop_columns = {column["name"] for column in inspect(engine).get_columns("route_stops")}
-    if "stop_code" not in route_stop_columns:
-        with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE route_stops ADD COLUMN stop_code VARCHAR(64)"))
-            legacy_stops = connection.execute(
-                text("SELECT id, route_id, sequence FROM route_stops WHERE stop_code IS NULL")
-            ).mappings().all()
-            for stop in legacy_stops:
-                code = f"STOP-{stop['route_id']}-{stop['sequence']:03d}"
+def _migrate_legacy_schema():
+    inspector = inspect(engine)
+    with engine.begin() as connection:
+        if "route_stops" in inspector.get_table_names():
+            route_stop_columns = {
+                column["name"] for column in inspector.get_columns("route_stops")
+            }
+            if "stop_code" not in route_stop_columns:
                 connection.execute(
-                    text("UPDATE route_stops SET stop_code = :code WHERE id = :id"),
-                    {"code": code, "id": stop["id"]},
+                    text("ALTER TABLE route_stops ADD COLUMN stop_code VARCHAR(64)")
                 )
-            connection.execute(text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS ix_route_stops_stop_code ON route_stops (stop_code)"
-            ))
+                legacy_stops = connection.execute(
+                    text("SELECT id, route_id, sequence FROM route_stops WHERE stop_code IS NULL")
+                ).mappings().all()
+                for stop in legacy_stops:
+                    code = f"STOP-{stop['route_id']}-{stop['sequence']:03d}"
+                    connection.execute(
+                        text("UPDATE route_stops SET stop_code = :code WHERE id = :id"),
+                        {"code": code, "id": stop["id"]},
+                    )
+                connection.execute(
+                    text(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS ix_route_stops_stop_code "
+                        "ON route_stops (stop_code)"
+                    )
+                )
+
+        for table_name, columns in (
+            ("outcomes", {"actual_arrival": "DATETIME"}),
+            (
+                "outcome_events",
+                {"actual_arrival": "DATETIME", "actual_departure": "DATETIME"},
+            ),
+        ):
+            if table_name not in inspector.get_table_names():
+                continue
+            existing = {
+                column["name"] for column in inspector.get_columns(table_name)
+            }
+            for column_name, column_type in columns.items():
+                if column_name not in existing:
+                    connection.execute(
+                        text(
+                            f"ALTER TABLE {table_name} "
+                            f"ADD COLUMN {column_name} {column_type}"
+                        )
+                    )
+
+
+_migrate_legacy_schema()
 
 
 @asynccontextmanager
@@ -147,6 +185,24 @@ def data_export_json(db: Session = Depends(get_db)):
 def data_export_csv(db: Session = Depends(get_db)):
     return Response(export_delivery_csv(db), media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=deliveries.csv"})
+
+
+@app.get("/api/v1/data/export.zip", dependencies=[Depends(allow(*DATA_ADMIN_OPERATIONS))])
+def data_export_zip(db: Session = Depends(get_db)):
+    return Response(
+        export_csv_zip(db),
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=delivery-dataset.zip"},
+    )
+
+
+@app.get("/api/v1/data/export.sql", dependencies=[Depends(allow(*DATA_ADMIN_OPERATIONS))])
+def data_export_sql(db: Session = Depends(get_db)):
+    return Response(
+        export_sql(db),
+        media_type="application/sql",
+        headers={"Content-Disposition": "attachment; filename=delivery-dataset.sql"},
+    )
 
 
 @app.get("/api/v1/sites", dependencies=[Depends(allow(*READ_OPERATIONS))])

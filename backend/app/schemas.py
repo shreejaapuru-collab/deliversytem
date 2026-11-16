@@ -23,6 +23,7 @@ class GenerateRequest(BaseModel):
     deliveries: int = Field(default=100, ge=1, le=2000)
     vehicles: int = Field(default=10, ge=1, le=100)
     seed: int = 20261022
+    reference_date: date = Field(default_factory=date.today)
 
 
 class OptimizeRequest(BaseModel):

@@ -43,6 +43,12 @@ class Delivery(Base):
     latest: Mapped[time] = mapped_column(Time, default=time(17, 0))
     order: Mapped[Order] = relationship(back_populates="deliveries")
     site: Mapped[Site] = relationship()
+    time_window: Mapped["TimeWindow | None"] = relationship(
+        back_populates="delivery", uselist=False, cascade="all, delete-orphan"
+    )
+    vehicle_restrictions: Mapped[list["DeliveryVehicleRestriction"]] = relationship(
+        back_populates="delivery", cascade="all, delete-orphan"
+    )
 
 
 class Vehicle(Base):
@@ -54,6 +60,43 @@ class Vehicle(Base):
     available: Mapped[bool] = mapped_column(Boolean, default=True)
     latitude: Mapped[float] = mapped_column(Float)
     longitude: Mapped[float] = mapped_column(Float)
+    capacity_records: Mapped[list["VehicleCapacity"]] = relationship(
+        back_populates="vehicle", cascade="all, delete-orphan"
+    )
+
+
+class VehicleCapacity(Base):
+    __tablename__ = "vehicle_capacities"
+    __table_args__ = (
+        UniqueConstraint("vehicle_id", "effective_from", name="uq_vehicle_capacity_effective_from"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vehicle_id: Mapped[str] = mapped_column(ForeignKey("vehicles.id"), index=True)
+    effective_from: Mapped[date] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    weight_capacity_kg: Mapped[float] = mapped_column(Float)
+    volume_capacity_m3: Mapped[float] = mapped_column(Float)
+    vehicle: Mapped[Vehicle] = relationship(back_populates="capacity_records")
+
+
+class TimeWindow(Base):
+    __tablename__ = "time_windows"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    delivery_id: Mapped[str] = mapped_column(ForeignKey("deliveries.id"), unique=True, index=True)
+    starts_at: Mapped[time] = mapped_column(Time)
+    ends_at: Mapped[time] = mapped_column(Time)
+    effective_from: Mapped[date] = mapped_column(Date)
+    effective_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    delivery: Mapped[Delivery] = relationship(back_populates="time_window")
+
+
+class DeliveryVehicleRestriction(Base):
+    __tablename__ = "delivery_vehicle_restrictions"
+    delivery_id: Mapped[str] = mapped_column(
+        ForeignKey("deliveries.id"), primary_key=True
+    )
+    vehicle_type: Mapped[str] = mapped_column(String(32), primary_key=True)
+    delivery: Mapped[Delivery] = relationship(back_populates="vehicle_restrictions")
 
 
 class Driver(Base):
@@ -106,6 +149,7 @@ class Outcome(Base):
     status: Mapped[str] = mapped_column(String(24))
     reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     delay_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    actual_arrival: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class OutcomeEvent(Base):
@@ -118,6 +162,8 @@ class OutcomeEvent(Base):
     status: Mapped[str] = mapped_column(String(24))
     reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     delay_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    actual_arrival: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    actual_departure: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
@@ -131,6 +177,15 @@ class GroundTruth(Base):
     expected_decision: Mapped[str] = mapped_column(String(120))
 
 
+class GroundTruthFixture(Base):
+    """Negative scenario fixtures kept outside optimizer input tables."""
+    __tablename__ = "ground_truth_fixtures"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    issue_type: Mapped[str] = mapped_column(String(64), index=True)
+    evidence_json: Mapped[str] = mapped_column(String)
+    expected_decision: Mapped[str] = mapped_column(String(160))
+
+
 class TravelTimeMatrix(Base):
     __tablename__ = "travel_time_matrix"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -140,6 +195,19 @@ class TravelTimeMatrix(Base):
     to_site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"), index=True)
     travel_minutes: Mapped[int] = mapped_column(Integer)
     scenario: Mapped[str] = mapped_column(String(24), default="NORMAL")
+
+
+class DatasetManifest(Base):
+    __tablename__ = "dataset_manifests"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    seed: Mapped[int] = mapped_column(Integer)
+    reference_date: Mapped[date] = mapped_column(Date)
+    counts_json: Mapped[str] = mapped_column(String)
+    source_manifest_json: Mapped[str] = mapped_column(String)
+    checksum_sha256: Mapped[str] = mapped_column(String(64))
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None)
+    )
 
 
 class User(Base):
