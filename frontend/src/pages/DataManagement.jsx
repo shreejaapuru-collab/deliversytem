@@ -16,7 +16,7 @@ export default function DataManagement() {
     const confirmed = window.confirm(`Generate ${size} data? This replaces the current synthetic sites, deliveries, routes and outcomes in the database.`);
     if (!confirmed) return;
     setBusy(true); setError(''); setResult(null);
-    try { setResult(await apiRequest('/data/generate', { method: 'POST', data: { ...counts, seed: Number(seed) } })); }
+    try { setResult(await apiRequest('/data/generate', { method: 'POST', timeout: 300000, data: { ...counts, seed: Number(seed) } })); }
     catch (issue) { setError(getErrorMessage(issue)); }
     finally { setBusy(false); }
   }
